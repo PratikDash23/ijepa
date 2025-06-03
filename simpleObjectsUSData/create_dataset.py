@@ -45,7 +45,10 @@ def create_images_for_objects(object_name, folder_name, test_set, train_set, tes
     shutil.copy(xlsx_file_path, object_folder)
 
     # run the script using the python interpreter placed in ai_venv\Scripts\python.exe located in the grandparent folder
-    python_executable = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ai_venv", "Scripts", "python.exe")
+    if os.name == 'nt':
+        python_executable = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ai_venv", "Scripts", "python.exe")
+    else:
+        python_executable = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ai_venv", "bin", "python")
     if not os.path.exists(python_executable):
         raise FileNotFoundError(f"Python executable {python_executable} does not exist. Please check the path.")    
    
@@ -84,20 +87,6 @@ if __name__ == "__main__":
     subfolders = [f for f in subfolders if os.path.isdir(f)]
     # for all subfolders, get the names of their grandparents
     grandparent_names = [os.path.basename(os.path.dirname(os.path.dirname(f))) for f in subfolders]
-
-    # give the object names
-    object_names = ["solid_sphere1", 
-                    "solid_sphere2", 
-                    "hollow_sphere", 
-                    "solid_cylinder", 
-                    "hollow_cylinder1",
-                    "hollow_cylinder2",
-                    "solid_cone",
-                    "solid_cuboid",
-                    "sphere_with_conical_spikes"]
-    
-    # arrange the grandparent_names in the same order as object_names
-    grandparent_names = [name for name in object_names if name in grandparent_names]
 
     # create a dictionary called folder_names, with keys as the grandparent names and values as the subfolder paths
     folder_names = {}
