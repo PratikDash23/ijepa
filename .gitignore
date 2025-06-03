@@ -5,3 +5,4 @@ __pycache__
 ai_venv/*
 dataset/*
 .ipynb_checkpoints/*
+*.pth.tar
