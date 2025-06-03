@@ -113,9 +113,9 @@ if __name__ == "__main__":
     # create a folder called "dataset_current_time" in a folder called "dataset" in the grandparent folder
     dataset_folder = os.path.join(grandparent_folder, "dataset", f"dataset_{current_time}")
     os.makedirs(dataset_folder, exist_ok=True)
-    # inside this folder, create two subfolders called "train_set" and "test_set"
-    train_set_folder = os.path.join(dataset_folder, "train_set")
-    test_set_folder = os.path.join(dataset_folder, "test_set")
+    # inside this folder, create two subfolders called "train" and "test"
+    train_set_folder = os.path.join(dataset_folder, "train")
+    test_set_folder = os.path.join(dataset_folder, "test")
     os.makedirs(train_set_folder, exist_ok=True)
     os.makedirs(test_set_folder, exist_ok=True)
 
