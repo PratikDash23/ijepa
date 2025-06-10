@@ -556,7 +556,7 @@ if __name__ == "__main__":
     excel_file_name = 'local_batch_uploads.xlsx'
     excel_file_path = os.path.join(parent_folder, excel_file_name)
     # Give the location of the folder where the images will be saved
-    batch_folder_save_location = "<ENTER_TRAIN_OR_TEST_FOLDER_PATH>"
+    batch_folder_save_location = "<ENTER_DESTINATION_FOLDER_PATH>"
 
     # For the following keys, take the input in logarithmic scale
     log_inputs = ['compression_ratio']
