@@ -5,7 +5,7 @@ data:
   - 0.3
   - 1.0
   crop_size: 224
-  image_folder: dataset/dataset_DATE_2025_06_12_TIME_46_09_57/
+  image_folder: dataset/dataset_DATE_2025_06_12_TIME_04_09_57/
   num_workers: 10
   pin_mem: true
   root_path: /home/ubuntu/ijepa/ijepa/
@@ -13,8 +13,8 @@ data:
   use_gaussian_blur: false
   use_horizontal_flip: false
 logging:
-  folder: /home/ubuntu/ijepa/ijepa/exp_logs/vit_small_dataset_new_ep100/
-  write_tag: vit_small_dataset_new_ep100
+  folder: /home/ubuntu/ijepa/ijepa/exp_logs/vit_small_with_val_ep100/
+  write_tag: vit_small_with_val_ep100
 mask:
   allow_overlap: false
   aspect_ratio:
@@ -42,7 +42,7 @@ optimization:
   ema:
   - 0.996
   - 1.0
-  epochs: 30
+  epochs: 100
   final_lr: 1.0e-06
   final_weight_decay: 0.4
   ipe_scale: 1.0
