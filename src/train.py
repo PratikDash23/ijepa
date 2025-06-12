@@ -189,6 +189,9 @@ def main(args, resume_preempt=False):
         color_jitter=color_jitter)
 
     # -- init data-loaders/samplers
+    train_image_folder = os.path.join(image_folder, "train")
+    val_image_folder = os.path.join(image_folder, "val")
+    test_image_folder = os.path.join(image_folder, "test")
     _, unsupervised_loader, unsupervised_sampler = make_imagenet1k(
             transform=transform,
             batch_size=batch_size,
@@ -199,36 +202,36 @@ def main(args, resume_preempt=False):
             world_size=world_size,
             rank=rank,
             root_path=root_path,
-            image_folder=image_folder,
+            image_folder=train_image_folder,
             copy_data=copy_data,
             drop_last=True)
     ipe = len(unsupervised_loader)
 
     # --- Validation and Test DataLoader Setup ---
-    _, val_loader, _ = make_imagenet1k(
+    _, val_loader, val_sampler = make_imagenet1k(
         transform=transform,
         batch_size=batch_size,
         collator=mask_collator,
         pin_mem=pin_mem,
         training=False,
         num_workers=0,
-        world_size=1,
-        rank=0,
+        world_size=world_size,
+        rank=rank,
         root_path=root_path,
-        image_folder=image_folder,
+        image_folder=val_image_folder,
         copy_data=False,
         drop_last=False)
-    _, test_loader, _ = make_imagenet1k(
+    _, test_loader, test_sampler = make_imagenet1k(
         transform=transform,
         batch_size=batch_size,
         collator=mask_collator,
         pin_mem=pin_mem,
         training=False,
         num_workers=0,
-        world_size=1,
-        rank=0,
+        world_size=world_size,
+        rank=rank,
         root_path=root_path,
-        image_folder=image_folder,
+        image_folder=test_image_folder,
         copy_data=False,
         drop_last=False)
 
@@ -301,6 +304,8 @@ def main(args, resume_preempt=False):
             if (epoch + 1) % checkpoint_freq == 0:
                 torch.save(save_dict, save_path.format(epoch=f'{epoch + 1}'))
 
+    import torch.distributed as dist
+
     def evaluate(model_tuple, data_loader, device, use_bfloat16):
         encoder, predictor, target_encoder = model_tuple
         encoder.eval()
@@ -331,10 +336,17 @@ def main(args, resume_preempt=False):
                     z = forward_context()
                     loss = F.smooth_l1_loss(z, h)
                 loss_meter.update(loss.item())
+        # Distributed aggregation
+        avg_loss = torch.tensor([loss_meter.avg], device=device)
+        count = torch.tensor([1], device=device)
+        if dist.is_initialized():
+            dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
+            dist.all_reduce(count, op=dist.ReduceOp.SUM)
+            avg_loss = avg_loss / count
         encoder.train()
         predictor.train()
         target_encoder.train()
-        return loss_meter.avg
+        return avg_loss.item()
 
     # -- TRAINING LOOP
     for epoch in range(start_epoch, num_epochs):
@@ -448,18 +460,20 @@ def main(args, resume_preempt=False):
         save_checkpoint(epoch+1)
 
         # --- Validation after each epoch ---
+        val_loss = evaluate((encoder, predictor, target_encoder), val_loader, device, use_bfloat16)
         if rank == 0:
-            val_loss = evaluate((encoder, predictor, target_encoder), val_loader, device, use_bfloat16)
             logger.info(f'[Validation] Epoch {epoch+1}: val_loss={val_loss:.5f}')
             print(f'[Validation] Epoch {epoch+1}: val_loss={val_loss:.5f}')
-            val_csv_logger.log(epoch + 1, val_loss)
+            if val_csv_logger is not None:
+                val_csv_logger.log(epoch + 1, val_loss)
 
     # --- Test after training ---
+    test_loss = evaluate((encoder, predictor, target_encoder), test_loader, device, use_bfloat16)
     if rank == 0:
-        test_loss = evaluate((encoder, predictor, target_encoder), test_loader, device, use_bfloat16)
         logger.info(f'[Test] test_loss={test_loss:.5f}')
         print(f'[Test] test_loss={test_loss:.5f}')
-        test_csv_logger.log(test_loss)
+        if test_csv_logger is not None:
+            test_csv_logger.log(test_loss)
 
 
 if __name__ == "__main__":
