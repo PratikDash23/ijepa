@@ -21,6 +21,7 @@ import copy
 import logging
 import sys
 import yaml
+import csv
 
 import numpy as np
 
@@ -41,7 +42,7 @@ from src.utils.logging import (
     grad_logger,
     AverageMeter)
 from src.utils.tensors import repeat_interleave_batch
-from src.datasets.imagenet1k import make_imagenet1k
+from src.datasets.imagenet1k import make_imagenet1k, make_validation_loader
 
 from src.helper import (
     load_checkpoint,
@@ -203,6 +204,44 @@ def main(args, resume_preempt=False):
             copy_data=copy_data,
             drop_last=True)
     ipe = len(unsupervised_loader)
+
+    # -- validation loader
+    val_loader = make_validation_loader(
+        transform=transform,
+        batch_size=batch_size,
+        collator=None,  # We'll handle masking in validation step
+        pin_mem=pin_mem,
+        num_workers=num_workers,
+        root_path=root_path,
+        image_folder=image_folder
+    )
+
+    def evaluate_validation(encoder, predictor, val_loader, mask_collator, device, threshold=0.9, target_frac=0.5):
+        encoder.eval()
+        predictor.eval()
+        total_loss = 0
+        count = 0
+        import torch.nn.functional as F
+        with torch.no_grad():
+            for imgs, _ in val_loader:
+                imgs = imgs.to(device)
+                # Get white region target masks
+                target_masks = mask_collator.sample_white_target_mask(imgs, threshold=threshold, target_frac=target_frac)
+                # For context, use the default mask logic
+                context_masks = [torch.zeros_like(target_masks[0])] * len(target_masks)  # dummy context
+                # Forward pass (adapt as needed for your model)
+                h = encoder(imgs)
+                h = F.layer_norm(h, (h.size(-1),))
+                B = len(h)
+                h_masked = apply_masks(h, [target_masks])
+                h_masked = repeat_interleave_batch(h_masked, B, repeat=len(context_masks))
+                z = encoder(imgs, [context_masks])
+                z = predictor(z, [context_masks], [target_masks])
+                loss = F.smooth_l1_loss(z, h_masked)
+                total_loss += loss.item()
+                count += 1
+        avg_loss = total_loss / count if count > 0 else 0
+        return avg_loss
 
     # -- init optimizer and scheduler
     optimizer, scaler, scheduler, wd_scheduler = init_opt(
@@ -369,6 +408,13 @@ def main(args, resume_preempt=False):
             log_stats()
 
             assert not np.isnan(loss), 'loss is nan'
+
+        # -- Validation after each epoch
+        val_loss = evaluate_validation(encoder, predictor, val_loader, mask_collator, device)
+        val_log_file = os.path.join(folder, f'{tag}_val_r{rank}.csv')
+        with open(val_log_file, 'a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([epoch + 1, val_loss])
 
         # -- Save Checkpoint after every epoch
         logger.info('avg. loss %.3f' % loss_meter.avg)

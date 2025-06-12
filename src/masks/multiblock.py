@@ -168,3 +168,36 @@ class MaskCollator(object):
         collated_masks_enc = torch.utils.data.default_collate(collated_masks_enc)
 
         return collated_batch, collated_masks_enc, collated_masks_pred
+
+    def get_white_region_mask(self, img_tensor, threshold=0.9):
+        # img_tensor: [B, 1, H, W] or [B, 3, H, W] (assume grayscale or RGB)
+        # Returns: mask of shape [B, H, W] with 1 for white, 0 otherwise
+        if img_tensor.shape[1] == 3:
+            img_gray = img_tensor.mean(dim=1)
+        else:
+            img_gray = img_tensor[:, 0]
+        white_mask = (img_gray > threshold).int()
+        return white_mask
+
+    def sample_white_target_mask(self, img_tensor, threshold=0.9, target_frac=0.5):
+        # Returns a list of indices for selected target patches based on white regions
+        B, _, H, W = img_tensor.shape
+        patch_h, patch_w = self.patch_size, self.patch_size
+        grid_h, grid_w = H // patch_h, W // patch_w
+        masks = []
+        for b in range(B):
+            white_mask = self.get_white_region_mask(img_tensor[b:b+1], threshold=threshold)[0]
+            patch_white = torch.zeros((grid_h, grid_w), dtype=torch.int32)
+            for i in range(grid_h):
+                for j in range(grid_w):
+                    patch = white_mask[i*patch_h:(i+1)*patch_h, j*patch_w:(j+1)*patch_w]
+                    if patch.float().mean() > 0.5:
+                        patch_white[i, j] = 1
+            white_indices = torch.nonzero(patch_white.flatten()).flatten()
+            num_targets = max(1, int(len(white_indices) * target_frac))
+            if len(white_indices) > 0:
+                selected = white_indices[torch.randperm(len(white_indices))[:num_targets]]
+            else:
+                selected = torch.tensor([], dtype=torch.int64)
+            masks.append(selected)
+        return masks
