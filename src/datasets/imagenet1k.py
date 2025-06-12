@@ -91,7 +91,11 @@ class ImageNet(torchvision.datasets.ImageFolder):
         :param index_targets: whether to index the id of each labeled image
         """
 
-        suffix = 'train/' if train else 'val/'
+        # Only append suffix if not already present
+        if image_folder.endswith(('train/', 'val/', 'test/')):
+            suffix = ''
+        else:
+            suffix = 'train/' if train else 'val/'
         data_path = None
         if copy_data:
             logger.info('copying data locally')

@@ -204,6 +204,44 @@ def main(args, resume_preempt=False):
             drop_last=True)
     ipe = len(unsupervised_loader)
 
+    # --- Validation and Test DataLoader Setup ---
+    _, val_loader, _ = make_imagenet1k(
+        transform=transform,
+        batch_size=batch_size,
+        collator=mask_collator,
+        pin_mem=pin_mem,
+        training=False,
+        num_workers=0,
+        world_size=1,
+        rank=0,
+        root_path=root_path,
+        image_folder=image_folder,
+        copy_data=False,
+        drop_last=False)
+    _, test_loader, _ = make_imagenet1k(
+        transform=transform,
+        batch_size=batch_size,
+        collator=mask_collator,
+        pin_mem=pin_mem,
+        training=False,
+        num_workers=0,
+        world_size=1,
+        rank=0,
+        root_path=root_path,
+        image_folder=image_folder,
+        copy_data=False,
+        drop_last=False)
+
+    # -- CSV loggers for val and test (only on rank 0)
+    if rank == 0:
+        val_log_file = os.path.join(folder, f'{tag}_val_loss.csv')
+        test_log_file = os.path.join(folder, f'{tag}_test_loss.csv')
+        val_csv_logger = CSVLogger(val_log_file, ('%d', 'epoch'), ('%.5f', 'val_loss'))
+        test_csv_logger = CSVLogger(test_log_file, ('%.5f', 'test_loss'))
+    else:
+        val_csv_logger = None
+        test_csv_logger = None
+
     # -- init optimizer and scheduler
     optimizer, scaler, scheduler, wd_scheduler = init_opt(
         encoder=encoder,
@@ -262,6 +300,41 @@ def main(args, resume_preempt=False):
             torch.save(save_dict, latest_path)
             if (epoch + 1) % checkpoint_freq == 0:
                 torch.save(save_dict, save_path.format(epoch=f'{epoch + 1}'))
+
+    def evaluate(model_tuple, data_loader, device, use_bfloat16):
+        encoder, predictor, target_encoder = model_tuple
+        encoder.eval()
+        predictor.eval()
+        target_encoder.eval()
+        loss_meter = AverageMeter()
+        with torch.no_grad():
+            for udata, masks_enc, masks_pred in data_loader:
+                imgs = udata[0].to(device, non_blocking=True)
+                masks_1 = [u.to(device, non_blocking=True) for u in masks_enc]
+                masks_2 = [u.to(device, non_blocking=True) for u in masks_pred]
+
+                def forward_target():
+                    h = target_encoder(imgs)
+                    h = F.layer_norm(h, (h.size(-1),))
+                    B = len(h)
+                    h = apply_masks(h, masks_2)
+                    h = repeat_interleave_batch(h, B, repeat=len(masks_1))
+                    return h
+
+                def forward_context():
+                    z = encoder(imgs, masks_1)
+                    z = predictor(z, masks_1, masks_2)
+                    return z
+
+                with torch.cuda.amp.autocast(dtype=torch.bfloat16, enabled=use_bfloat16):
+                    h = forward_target()
+                    z = forward_context()
+                    loss = F.smooth_l1_loss(z, h)
+                loss_meter.update(loss.item())
+        encoder.train()
+        predictor.train()
+        target_encoder.train()
+        return loss_meter.avg
 
     # -- TRAINING LOOP
     for epoch in range(start_epoch, num_epochs):
@@ -373,6 +446,20 @@ def main(args, resume_preempt=False):
         # -- Save Checkpoint after every epoch
         logger.info('avg. loss %.3f' % loss_meter.avg)
         save_checkpoint(epoch+1)
+
+        # --- Validation after each epoch ---
+        if rank == 0:
+            val_loss = evaluate((encoder, predictor, target_encoder), val_loader, device, use_bfloat16)
+            logger.info(f'[Validation] Epoch {epoch+1}: val_loss={val_loss:.5f}')
+            print(f'[Validation] Epoch {epoch+1}: val_loss={val_loss:.5f}')
+            val_csv_logger.log(epoch + 1, val_loss)
+
+    # --- Test after training ---
+    if rank == 0:
+        test_loss = evaluate((encoder, predictor, target_encoder), test_loader, device, use_bfloat16)
+        logger.info(f'[Test] test_loss={test_loss:.5f}')
+        print(f'[Test] test_loss={test_loss:.5f}')
+        test_csv_logger.log(test_loss)
 
 
 if __name__ == "__main__":
