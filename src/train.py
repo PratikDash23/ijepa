@@ -216,6 +216,17 @@ def main(args, resume_preempt=False):
         image_folder=image_folder
     )
 
+    # -- test loader (similar to val loader)
+    test_loader = make_validation_loader(
+        transform=transform,
+        batch_size=batch_size,
+        collator=None,  # We'll handle masking in test step
+        pin_mem=pin_mem,
+        num_workers=num_workers,
+        root_path=root_path,
+        image_folder=image_folder.replace('val', 'test') if 'val' in image_folder else image_folder.replace('train', 'test')
+    )
+
     def evaluate_validation(encoder, predictor, val_loader, mask_collator, device, threshold=0.9, target_frac=0.5):
         encoder.eval()
         predictor.eval()
@@ -416,9 +427,12 @@ def main(args, resume_preempt=False):
             writer = csv.writer(f)
             writer.writerow([epoch + 1, val_loss])
 
-        # -- Save Checkpoint after every epoch
-        logger.info('avg. loss %.3f' % loss_meter.avg)
-        save_checkpoint(epoch+1)
+    # -- Test evaluation after training
+    test_loss = evaluate_validation(encoder, predictor, test_loader, mask_collator, device)
+    test_log_file = os.path.join(folder, f'{tag}_test_r{rank}.csv')
+    with open(test_log_file, 'a', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['test', test_loss])
 
 
 if __name__ == "__main__":
