@@ -10,7 +10,7 @@ idna==3.10
 kiwisolver==1.4.8
 mat73==0.65
 matplotlib==3.10.3
-numpy==2.2.6
+numpy==1.26.4
 openpyxl==3.1.5
 packaging==25.0
 pandas==2.2.3
