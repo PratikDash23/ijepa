@@ -220,3 +220,28 @@ def copy_imgnt_locally(
                 logger.info(f'{local_rank}: Checking {tmp_sgnl_file}')
 
     return data_path
+
+
+def make_validation_loader(
+    transform,
+    batch_size,
+    collator=None,
+    pin_mem=True,
+    num_workers=8,
+    root_path=None,
+    image_folder=None
+):
+    import os
+    from torch.utils.data import DataLoader
+    import torchvision
+    val_folder = os.path.join(root_path, image_folder, 'val', 'class0')
+    val_dataset = torchvision.datasets.ImageFolder(val_folder, transform=transform)
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_mem,
+        collate_fn=collator
+    )
+    return val_loader

@@ -21,6 +21,7 @@ import copy
 import logging
 import sys
 import yaml
+import csv
 
 import numpy as np
 
@@ -41,7 +42,7 @@ from src.utils.logging import (
     grad_logger,
     AverageMeter)
 from src.utils.tensors import repeat_interleave_batch
-from src.datasets.imagenet1k import make_imagenet1k
+from src.datasets.imagenet1k import make_imagenet1k, make_validation_loader
 
 from src.helper import (
     load_checkpoint,
