@@ -190,6 +190,9 @@ def main(args, resume_preempt=False):
         color_jitter=color_jitter)
 
     # -- init data-loaders/samplers
+    train_image_folder = os.path.join(image_folder, "train")
+    val_image_folder = os.path.join(image_folder, "val")
+    test_image_folder = os.path.join(image_folder, "test")
     _, unsupervised_loader, unsupervised_sampler = make_imagenet1k(
             transform=transform,
             batch_size=batch_size,
@@ -200,59 +203,48 @@ def main(args, resume_preempt=False):
             world_size=world_size,
             rank=rank,
             root_path=root_path,
-            image_folder=image_folder,
+            image_folder=train_image_folder,
             copy_data=copy_data,
             drop_last=True)
     ipe = len(unsupervised_loader)
 
-    # -- validation loader
-    val_loader = make_validation_loader(
+    # --- Validation and Test DataLoader Setup ---
+    _, val_loader, val_sampler = make_imagenet1k(
         transform=transform,
         batch_size=batch_size,
-        collator=None,  # We'll handle masking in validation step
+        collator=mask_collator,
         pin_mem=pin_mem,
-        num_workers=num_workers,
+        training=False,
+        num_workers=0,
+        world_size=world_size,
+        rank=rank,
         root_path=root_path,
-        image_folder=image_folder
-    )
-
-    # -- test loader (similar to val loader)
-    test_loader = make_validation_loader(
+        image_folder=val_image_folder,
+        copy_data=False,
+        drop_last=False)
+    _, test_loader, test_sampler = make_imagenet1k(
         transform=transform,
         batch_size=batch_size,
-        collator=None,  # We'll handle masking in test step
+        collator=mask_collator,
         pin_mem=pin_mem,
-        num_workers=num_workers,
+        training=False,
+        num_workers=0,
+        world_size=world_size,
+        rank=rank,
         root_path=root_path,
-        image_folder=image_folder.replace('val', 'test') if 'val' in image_folder else image_folder.replace('train', 'test')
-    )
+        image_folder=test_image_folder,
+        copy_data=False,
+        drop_last=False)
 
-    def evaluate_validation(encoder, predictor, val_loader, mask_collator, device, threshold=0.9, target_frac=0.5):
-        encoder.eval()
-        predictor.eval()
-        total_loss = 0
-        count = 0
-        import torch.nn.functional as F
-        with torch.no_grad():
-            for imgs, _ in val_loader:
-                imgs = imgs.to(device)
-                # Get white region target masks
-                target_masks = mask_collator.sample_white_target_mask(imgs, threshold=threshold, target_frac=target_frac)
-                # For context, use the default mask logic
-                context_masks = [torch.zeros_like(target_masks[0])] * len(target_masks)  # dummy context
-                # Forward pass (adapt as needed for your model)
-                h = encoder(imgs)
-                h = F.layer_norm(h, (h.size(-1),))
-                B = len(h)
-                h_masked = apply_masks(h, [target_masks])
-                h_masked = repeat_interleave_batch(h_masked, B, repeat=len(context_masks))
-                z = encoder(imgs, [context_masks])
-                z = predictor(z, [context_masks], [target_masks])
-                loss = F.smooth_l1_loss(z, h_masked)
-                total_loss += loss.item()
-                count += 1
-        avg_loss = total_loss / count if count > 0 else 0
-        return avg_loss
+    # -- CSV loggers for val and test (only on rank 0)
+    if rank == 0:
+        val_log_file = os.path.join(folder, f'{tag}_val_loss.csv')
+        test_log_file = os.path.join(folder, f'{tag}_test_loss.csv')
+        val_csv_logger = CSVLogger(val_log_file, ('%d', 'epoch'), ('%.5f', 'val_loss'))
+        test_csv_logger = CSVLogger(test_log_file, ('%.5f', 'test_loss'))
+    else:
+        val_csv_logger = None
+        test_csv_logger = None
 
     # -- init optimizer and scheduler
     optimizer, scaler, scheduler, wd_scheduler = init_opt(
@@ -312,6 +304,50 @@ def main(args, resume_preempt=False):
             torch.save(save_dict, latest_path)
             if (epoch + 1) % checkpoint_freq == 0:
                 torch.save(save_dict, save_path.format(epoch=f'{epoch + 1}'))
+
+    import torch.distributed as dist
+
+    def evaluate(model_tuple, data_loader, device, use_bfloat16):
+        encoder, predictor, target_encoder = model_tuple
+        encoder.eval()
+        predictor.eval()
+        target_encoder.eval()
+        loss_meter = AverageMeter()
+        with torch.no_grad():
+            for udata, masks_enc, masks_pred in data_loader:
+                imgs = udata[0].to(device, non_blocking=True)
+                masks_1 = [u.to(device, non_blocking=True) for u in masks_enc]
+                masks_2 = [u.to(device, non_blocking=True) for u in masks_pred]
+
+                def forward_target():
+                    h = target_encoder(imgs)
+                    h = F.layer_norm(h, (h.size(-1),))
+                    B = len(h)
+                    h = apply_masks(h, masks_2)
+                    h = repeat_interleave_batch(h, B, repeat=len(masks_1))
+                    return h
+
+                def forward_context():
+                    z = encoder(imgs, masks_1)
+                    z = predictor(z, masks_1, masks_2)
+                    return z
+
+                with torch.cuda.amp.autocast(dtype=torch.bfloat16, enabled=use_bfloat16):
+                    h = forward_target()
+                    z = forward_context()
+                    loss = F.smooth_l1_loss(z, h)
+                loss_meter.update(loss.item())
+        # Distributed aggregation
+        avg_loss = torch.tensor([loss_meter.avg], device=device)
+        count = torch.tensor([1], device=device)
+        if dist.is_initialized():
+            dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
+            dist.all_reduce(count, op=dist.ReduceOp.SUM)
+            avg_loss = avg_loss / count
+        encoder.train()
+        predictor.train()
+        target_encoder.train()
+        return avg_loss.item()
 
     # -- TRAINING LOOP
     for epoch in range(start_epoch, num_epochs):
@@ -420,19 +456,25 @@ def main(args, resume_preempt=False):
 
             assert not np.isnan(loss), 'loss is nan'
 
-        # -- Validation after each epoch
-        val_loss = evaluate_validation(encoder, predictor, val_loader, mask_collator, device)
-        val_log_file = os.path.join(folder, f'{tag}_val_r{rank}.csv')
-        with open(val_log_file, 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([epoch + 1, val_loss])
+        # -- Save Checkpoint after every epoch
+        logger.info('avg. loss %.3f' % loss_meter.avg)
+        save_checkpoint(epoch+1)
 
-    # -- Test evaluation after training
-    test_loss = evaluate_validation(encoder, predictor, test_loader, mask_collator, device)
-    test_log_file = os.path.join(folder, f'{tag}_test_r{rank}.csv')
-    with open(test_log_file, 'a', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['test', test_loss])
+        # --- Validation after each epoch ---
+        val_loss = evaluate((encoder, predictor, target_encoder), val_loader, device, use_bfloat16)
+        if rank == 0:
+            logger.info(f'[Validation] Epoch {epoch+1}: val_loss={val_loss:.5f}')
+            print(f'[Validation] Epoch {epoch+1}: val_loss={val_loss:.5f}')
+            if val_csv_logger is not None:
+                val_csv_logger.log(epoch + 1, val_loss)
+
+    # --- Test after training ---
+    test_loss = evaluate((encoder, predictor, target_encoder), test_loader, device, use_bfloat16)
+    if rank == 0:
+        logger.info(f'[Test] test_loss={test_loss:.5f}')
+        print(f'[Test] test_loss={test_loss:.5f}')
+        if test_csv_logger is not None:
+            test_csv_logger.log(test_loss)
 
 
 if __name__ == "__main__":

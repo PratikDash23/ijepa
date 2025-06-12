@@ -90,20 +90,19 @@ class ImageNet(torchvision.datasets.ImageFolder):
         :param copy_data: whether to copy data from network file locally
         :param index_targets: whether to index the id of each labeled image
         """
-
-        suffix = 'train/' if train else 'val/'
+        # Always use image_folder as-is (no suffix logic)
         data_path = None
         if copy_data:
             logger.info('copying data locally')
             data_path = copy_imgnt_locally(
                 root=root,
-                suffix=suffix,
+                suffix='',
                 image_folder=image_folder,
                 tar_file=tar_file,
                 job_id=job_id,
                 local_rank=local_rank)
         if (not copy_data) or (data_path is None):
-            data_path = os.path.join(root, image_folder, suffix)
+            data_path = os.path.join(root, image_folder)
         logger.info(f'data-path {data_path}')
 
         super(ImageNet, self).__init__(root=data_path, transform=transform)
