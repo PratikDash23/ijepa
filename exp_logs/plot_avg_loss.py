@@ -80,15 +80,21 @@ if test_loss_file is not None:
         test_loss_value = test_df.iloc[-1]  # last valid test loss
         print(f"Test loss: {test_loss_value:.5f}")
 
+# Determine the max value for y-axis scaling
+max_train = avg_loss.max() if not avg_loss.empty else 0
+max_val = val_loss.max() if (val_loss is not None and not val_loss.empty) else 0
+max_y = max(max_train, max_val)
+
 # Plot and save the figure
 plt.figure(figsize=(8, 5))
 ax = plt.gca()
 avg_loss.plot(marker='o', ax=ax, label='Train Loss', color='tab:blue')
 ax.set_xlabel('Epoch')
-ax.set_ylabel('Average Train Loss', color='tab:blue')
+ax.set_ylabel('Train Loss', color='tab:blue')
 ax.tick_params(axis='y', labelcolor='tab:blue')
-plt.title('Average Cost (Loss) per Epoch')
+plt.title('Cost (Loss) per Epoch')
 plt.grid(True)
+ax.set_ylim(0, max_y * 1.05)
 
 # Plot validation loss on the right y-axis if available
 if val_loss is not None and not val_loss.empty:
@@ -96,6 +102,7 @@ if val_loss is not None and not val_loss.empty:
     val_loss.plot(marker='s', ax=ax2, label='Val Loss', color='tab:red')
     ax2.set_ylabel('Validation Loss', color='tab:red')
     ax2.tick_params(axis='y', labelcolor='tab:red')
+    ax2.set_ylim(0, max_y * 1.05)
     lines, labels = ax.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax2.legend(lines + lines2, labels + labels2, loc='upper right')
@@ -103,5 +110,5 @@ else:
     ax.legend(loc='upper right')
 
 plt.tight_layout()
-plt.savefig(os.path.join(log_dir, 'avg_loss_vs_epoch.png'))  
+plt.savefig(os.path.join(log_dir, 'loss_vs_epoch.png'))  
 plt.close()
