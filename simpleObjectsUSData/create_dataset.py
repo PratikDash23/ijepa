@@ -161,9 +161,9 @@ if __name__ == "__main__":
         image_files = glob.glob(os.path.join(dataset_folder, object_name, '*.png'))
         all_image_files.extend(image_files)
 
-    # prepare an xlsx file called "class_info.xlsx" in class0_folder
+    # prepare an xlsx file called "original_class_info.xlsx" in class0_folder
     # which will store geometry, material fill, and tissue information for each image
-    class_info_path = os.path.join(class0_folder, "class_info.xlsx")
+    class_info_path = os.path.join(class0_folder, "original_class_info.xlsx")
     class_info = []
     # move the files to the class0 folder and prepare the class_info list
     for i, image_file in enumerate(all_image_files):
@@ -208,13 +208,13 @@ if __name__ == "__main__":
         dest_image_path = os.path.join(test_set_folder, "class0", f"{idx}.png")
         shutil.move(src_image_path, dest_image_path)
 
-    # now remove the respective indices from the class_info.xlsx file
-    # and prepare new class_info.xlsx files for val and test sets
-    df_val = df.iloc[val_indices].reset_index(drop=True)
-    df_test = df.iloc[test_indices].reset_index(drop=True)
-    df_train = df.drop(val_indices + test_indices).reset_index(drop=True)
-    df_val.to_excel(os.path.join(val_set_folder, "class0", "class_info.xlsx"), index=False)
-    df_test.to_excel(os.path.join(test_set_folder, "class0", "class_info.xlsx"), index=False)
-    df_train.to_excel(os.path.join(train_set_folder, "class0", "class_info.xlsx"), index=False)
+    # # now remove the respective indices from the class_info.xlsx file
+    # # and prepare new class_info.xlsx files for val and test sets
+    # df_val = df.iloc[val_indices].reset_index(drop=True)
+    # df_test = df.iloc[test_indices].reset_index(drop=True)
+    # df_train = df.drop(val_indices + test_indices).reset_index(drop=True)
+    # df_val.to_excel(os.path.join(val_set_folder, "class0", "class_info.xlsx"), index=False)
+    # df_test.to_excel(os.path.join(test_set_folder, "class0", "class_info.xlsx"), index=False)
+    # df_train.to_excel(os.path.join(train_set_folder, "class0", "class_info.xlsx"), index=False)
 
     print("Dataset creation completed successfully.")
