@@ -29,6 +29,7 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel
+import torch.distributed as dist
 
 from src.masks.multiblock import MaskCollator as MBMaskCollator
 from src.masks.utils import apply_masks
@@ -222,6 +223,7 @@ def main(args, resume_preempt=False):
         image_folder=val_image_folder,
         copy_data=False,
         drop_last=False)
+    
     _, test_loader, test_sampler = make_imagenet1k(
         transform=transform,
         batch_size=batch_size,
@@ -304,8 +306,6 @@ def main(args, resume_preempt=False):
             torch.save(save_dict, latest_path)
             if (epoch + 1) % checkpoint_freq == 0:
                 torch.save(save_dict, save_path.format(epoch=f'{epoch + 1}'))
-
-    import torch.distributed as dist
 
     def evaluate(model_tuple, data_loader, device, use_bfloat16):
         encoder, predictor, target_encoder = model_tuple
