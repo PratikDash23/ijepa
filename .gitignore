@@ -6,3 +6,5 @@ ai_venv/*
 dataset/*
 .ipynb_checkpoints/*
 *.pth.tar
+aws/*
+aws_upload.py

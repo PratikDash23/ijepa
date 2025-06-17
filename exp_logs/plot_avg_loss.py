@@ -12,7 +12,9 @@ import os
 # log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vit_tiny_with_val_ep5')
 # log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vit_tiny_with_val_ep14')
 # log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vit_tiny_with_val_ep100')
-log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vit_small_with_val_ep100')
+# log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vit_small_with_val_ep100')
+# log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vit_small_spherical_ep100')
+log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vit_tiny_spherical_ep100')
 
 csv_files = glob.glob(os.path.join(log_dir, '*.csv'))
 

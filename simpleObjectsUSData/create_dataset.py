@@ -48,7 +48,7 @@ def create_images_for_objects(object_name, folder_name, dataset_folder, script_p
     if os.name == 'nt':
         python_executable = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "ai_venv", "Scripts", "python.exe")
     else:
-        python_executable = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "ai_venv", "bin", "python")
+        python_executable = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "ai_venv", "bin", "python")
     if not os.path.exists(python_executable):
         raise FileNotFoundError(f"Python executable {python_executable} does not exist. Please check the path.")    
    
