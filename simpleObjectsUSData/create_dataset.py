@@ -9,6 +9,7 @@ import random
 random.seed(42)  # For reproducibility
 import multiprocessing
 import pandas as pd
+import numpy as np
 import subprocess
 from datetime import datetime
 import re
@@ -196,25 +197,26 @@ if __name__ == "__main__":
     val_indices = sorted(random.sample(range(total_images), k=int(total_images * 0.15)))
     remaining_indices = set(range(total_images)) - set(val_indices)
     test_indices = sorted(random.sample(list(remaining_indices), k=int(total_images * 0.15)))
+    remaining_indices -= set(test_indices)
 
     # Move the selected images to the val and test folders
     for idx in val_indices:
-        src_image_path = os.path.join(class0_folder, f"{idx}.png")
-        dest_image_path = os.path.join(val_set_folder, "class0", f"{idx}.png")
-        shutil.move(src_image_path, dest_image_path)
+        src = os.path.join(class0_folder, f"{idx + 1}.png")
+        dst = os.path.join(val_set_folder, "class0", f"{idx + 1}.png")
+        shutil.move(src, dst)
 
     for idx in test_indices:
-        src_image_path = os.path.join(class0_folder, f"{idx}.png")
-        dest_image_path = os.path.join(test_set_folder, "class0", f"{idx}.png")
-        shutil.move(src_image_path, dest_image_path)
+        src = os.path.join(class0_folder, f"{idx + 1}.png")
+        dst = os.path.join(test_set_folder, "class0", f"{idx + 1}.png")
+        shutil.move(src, dst)
 
-    # # now remove the respective indices from the class_info.xlsx file
-    # # and prepare new class_info.xlsx files for val and test sets
-    # df_val = df.iloc[val_indices].reset_index(drop=True)
-    # df_test = df.iloc[test_indices].reset_index(drop=True)
-    # df_train = df.drop(val_indices + test_indices).reset_index(drop=True)
-    # df_val.to_excel(os.path.join(val_set_folder, "class0", "class_info.xlsx"), index=False)
-    # df_test.to_excel(os.path.join(test_set_folder, "class0", "class_info.xlsx"), index=False)
-    # df_train.to_excel(os.path.join(train_set_folder, "class0", "class_info.xlsx"), index=False)
+    # now prepare three separate xlsx files for train, val, and test sets
+    df_val = df.iloc[val_indices].reset_index(drop=True)
+    df_val.to_excel(os.path.join(val_set_folder, "class0", "class_info.xlsx"), index=False)
+    df_test = df.iloc[test_indices].reset_index(drop=True)
+    df_test.to_excel(os.path.join(test_set_folder, "class0", "class_info.xlsx"), index=False)
+    df_train = df.iloc[list(remaining_indices)].reset_index(drop=True)
+    df_train.to_excel(os.path.join(train_set_folder, "class0", "class_info.xlsx"), index=False)
+
 
     print("Dataset creation completed successfully.")
